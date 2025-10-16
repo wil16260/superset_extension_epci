@@ -1,3 +1,4 @@
+new ChartPlugin({...}).configure({ key: 'epci_map' }).register();
 import { ChartPlugin, ChartMetadata } from '@superset-ui/core';
 import controlPanel from './plugin/controlPanel';
 import transformProps from './plugin/transformProps';
