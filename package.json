@@ -1,0 +1,39 @@
+{
+  "name": "@your-org/superset-plugin-epci-country-map",
+  "version": "0.1.0",
+  "description": "Superset plugin: EPCI (intercommunalités) choropleth using ECharts (no deck.gl).",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "rollup -c",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "^0.21.0 || ^1.0.0",
+    "@superset-ui/core": "^0.21.0 || ^1.0.0",
+    "@superset-ui/plugin-chart-echarts": "^1.9.0 || ^2.0.0",
+    "echarts": "^5.5.0",
+    "react": "^16.13.1 || ^17 || ^18",
+    "react-dom": "^16.13.1 || ^17 || ^18"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.0",
+    "@rollup/plugin-json": "^6.0.0",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@rollup/plugin-typescript": "^11.0.0",
+    "rollup": "^3.29.0",
+    "typescript": "^5.4.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/superset-plugin-epci-country-map.git"
+  }
+}
