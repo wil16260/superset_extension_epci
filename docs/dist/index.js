@@ -1,26 +1,48 @@
 (function () {
   "use strict";
 
-  // --- Utils ---
-  function log() { try { console.log.apply(console, arguments); } catch(e) {} }
-  function warn() { try { console.warn.apply(console, arguments); } catch(e) {} }
-  function error() { try { console.error.apply(console, arguments); } catch(e) {} }
-
-  // --- ECharts presence ---
-  var echarts = window.echarts;
-  if (!echarts) {
-    error("[EPCI Map] ECharts introuvable sur la page. Ouvre/installe au moins une viz ECharts standard dans Superset.");
-    return;
+  // ---- utilitaires ----
+  function log() { try { console.log.apply(console, arguments); } catch (e) {} }
+  function warn() { try { console.warn.apply(console, arguments); } catch (e) {} }
+  function error() { try { console.error.apply(console, arguments); } catch (e) {} }
+  function loadScript(url) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = url;
+      s.async = true;
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error("Failed to load " + url)); };
+      document.head.appendChild(s);
+    });
   }
 
-  // --- EPCI GEOJSON (exemple; remplace par le tien si besoin) ---
-  // Si tu veux embarquer ton geojson, colle l'objet ici ou garde tel quel si tu as déjà remplacé ailleurs.
+  // ---- charge ECharts si absent ----
+  function ensureEcharts() {
+    if (window.echarts) return Promise.resolve();
+    // 1) URL personnalisable (si tu définis window.__EPCI_ECHARTS_URL__)
+    var sources = [];
+    if (typeof window.__EPCI_ECHARTS_URL__ === "string") sources.push(window.__EPCI_ECHARTS_URL__);
+    // 2) CDN (rapide)
+    sources.push("https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js");
+    sources.push("https://unpkg.com/echarts@5/dist/echarts.min.js");
+    // 3) fallback local (si tu poses echarts.min.js dans docs/dist/)
+    var base = (document.currentScript && document.currentScript.src) || "";
+    var root = base.replace(/\/index\.js(\?.*)?$/, "");
+    sources.push(root + "/echarts.min.js");
+
+    // essaie en chaîne
+    var p = Promise.reject();
+    sources.forEach(function (u) {
+      p = p.catch(function () { return loadScript(u); });
+    });
+    return p.then(function () {
+      if (!window.echarts) throw new Error("echarts still undefined after loading");
+    });
+  }
+
+  // ---- ton GEOJSON (exemple: remplace si tu veux l’embarquer ici) ----
   var EPCI_GEOJSON = (function () {
-    try {
-      // Si tu avais un EPCI_GEOJSON global déclaré ailleurs, on le réutilise
-      if (window.EPCI_GEOJSON) return window.EPCI_GEOJSON;
-    } catch (e) {}
-    // Fallback d'exemple minimal (à remplacer en prod)
+    // si tu as déjà intégré ton epci2.geojson, remplace ce retour par l’objet complet
     return {
       "type": "FeatureCollection",
       "features": [{
@@ -31,8 +53,9 @@
     };
   })();
 
-  // --- Renderer ---
+  // ---- renderer ----
   function EpciRenderer(props) {
+    var echarts = window.echarts;
     var container = props.element || props.container;
     var width = props.width || 800;
     var height = props.height || 600;
@@ -103,71 +126,72 @@
     };
   }
 
-  // --- Multi-STRATÉGIES d'enregistrement ---
-  var registered = false;
-
-  // 1) Via superset-ui-core si dispo (chemin “classique”)
-  try {
+  function registerPlugin() {
     var core = window["superset-ui-core"];
-    if (core && core.ChartPlugin && core.ChartMetadata) {
-      var ChartPlugin = core.ChartPlugin;
-      var ChartMetadata = core.ChartMetadata;
-      new ChartPlugin({
-        loadChart: function () { return Promise.resolve(EpciRenderer); },
-        metadata: new ChartMetadata({
-          name: "EPCI Map (ECharts)",
-          description: "Choropleth des intercommunalités françaises (SIREN).",
-          tags: ["Map", "ECharts", "France", "EPCI"],
-          useLegacyApi: false
-        }),
-        transformProps: transformProps
-      }).configure({ key: "epci_map" }).register();
-      log("[EPCI Map] Plugin enregistré via superset-ui-core ✅");
-      registered = true;
-    }
-  } catch (e) {
-    warn("[EPCI Map] superset-ui-core indisponible (mode externe)", e);
-  }
+    var registered = false;
 
-  // 2) Via un registre global si exposé par Superset (fallbacks)
-  if (!registered) {
+    // 1) chemin classique via superset-ui-core
     try {
-      // Plusieurs superset build exposent un “registry” global de plugins
-      var reg =
-        (window.__superset__ && window.__superset__.pluginRegistry) ||
-        (window.superset && window.superset.pluginRegistry) ||
-        null;
-
-      if (reg && typeof reg.registerValue === "function") {
-        reg.registerValue("epci_map", {
+      if (core && core.ChartPlugin && core.ChartMetadata) {
+        new core.ChartPlugin({
           loadChart: function () { return Promise.resolve(EpciRenderer); },
-          metadata: {
+          metadata: new core.ChartMetadata({
             name: "EPCI Map (ECharts)",
             description: "Choropleth des intercommunalités françaises (SIREN).",
             tags: ["Map", "ECharts", "France", "EPCI"],
-          },
+            useLegacyApi: false
+          }),
           transformProps: transformProps
-        });
-        log("[EPCI Map] Plugin enregistré via pluginRegistry global ✅");
+        }).configure({ key: "epci_map" }).register();
+        log("[EPCI Map] Plugin enregistré via superset-ui-core ✅");
         registered = true;
       }
-    } catch (e) {
-      warn("[EPCI Map] pluginRegistry global indisponible", e);
+    } catch (e) { warn("[EPCI Map] superset-ui-core indisponible", e); }
+
+    // 2) fallback sur un registre global si exposé
+    if (!registered) {
+      try {
+        var reg =
+          (window.__superset__ && window.__superset__.pluginRegistry) ||
+          (window.superset && window.superset.pluginRegistry) ||
+          null;
+
+        if (reg && typeof reg.registerValue === "function") {
+          reg.registerValue("epci_map", {
+            loadChart: function () { return Promise.resolve(EpciRenderer); },
+            metadata: {
+              name: "EPCI Map (ECharts)",
+              description: "Choropleth des intercommunalités françaises (SIREN).",
+              tags: ["Map", "ECharts", "France", "EPCI"]
+            },
+            transformProps: transformProps
+          });
+          log("[EPCI Map] Plugin enregistré via pluginRegistry global ✅");
+          registered = true;
+        }
+      } catch (e) { warn("[EPCI Map] pluginRegistry global indisponible", e); }
+    }
+
+    // 3) dernier recours
+    if (!registered) {
+      window.__EPCI_MAP_PLUGIN__ = {
+        key: "epci_map",
+        loadChart: function () { return Promise.resolve(EpciRenderer); },
+        transformProps: transformProps,
+        metadata: {
+          name: "EPCI Map (ECharts)",
+          description: "Choropleth des intercommunalités françaises (SIREN).",
+          tags: ["Map", "ECharts", "France", "EPCI"]
+        }
+      };
+      log("[EPCI Map] Factory exposée sur window.__EPCI_MAP_PLUGIN__ (fallback).");
     }
   }
 
-  // 3) Dernier recours : accrocher la factory sur window pour qu’un setup externe la consomme
-  if (!registered) {
-    window.__EPCI_MAP_PLUGIN__ = {
-      key: "epci_map",
-      loadChart: function () { return Promise.resolve(EpciRenderer); },
-      transformProps: transformProps,
-      metadata: {
-        name: "EPCI Map (ECharts)",
-        description: "Choropleth des intercommunalités françaises (SIREN).",
-        tags: ["Map", "ECharts", "France", "EPCI"]
-      }
-    };
-    log("[EPCI Map] Factory exposée sur window.__EPCI_MAP_PLUGIN__ (mode fallback).");
-  }
+  // ---- flux principal ----
+  ensureEcharts()
+    .then(registerPlugin)
+    .catch(function (e) {
+      error("[EPCI Map] Impossible de charger ECharts:", e);
+    });
 })();
